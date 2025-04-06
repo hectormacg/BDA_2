@@ -8,35 +8,31 @@ data {
 }
 parameters {
     vector[K] beta;
+    real reciprocal_phi;
 }
-
 transformed parameters {
-    real alpha;
-    alpha = 0.;
+    vector[N] eta;
+    real phi;
+    eta = area_log + X * beta;
+    phi = 1. / reciprocal_phi;
 }
-
 
 model {
+    reciprocal_phi ~ cauchy(0., 5);
     beta[1] ~ normal(0,1.5);
     beta[2:K] ~ normal(0,1);
-    y ~ poisson_log(area_log + X * beta);
+    y ~ neg_binomial_2_log(eta, phi);
 }
 
 generated quantities{
-    //vector[N] yrep;  //replicates
-    vector[N] log_lambda;
-    vector[N] lambda; 
-    real beta_3_4_sum;
+    vector[N] yrep;  //replicates
+    vector[N] mu;
     vector[N] log_lik;
-    beta_3_4_sum=exp(beta[3] + beta[4]);
-
-    // Calculate linear predictor (log rate parameter) efficiently
-    log_lambda =  area_log + X * beta;
-    lambda=exp(log_lambda);
+    mu = exp(eta);
 
     // Generate replicated data using vectorized _rng form
     for (n in 1:N) {
-         log_lik[n] = log(poisson_lpmf(y[n] | lambda));
-         
+         log_lik[n] = neg_binomial_2_log_lpmf(y[n] | eta[n], phi);   
+         yrep[n] = neg_binomial_2_rng(mu[n], phi);
     }
 }
