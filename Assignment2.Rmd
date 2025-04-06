@@ -329,7 +329,7 @@ generated quantities{
 
     // Generate replicated data using vectorized _rng form
     for (n in 1:N) {
-         log_lik[n] = poisson_lpmf(y[n] | lambda);
+         log_lik[n] = poisson_lpmf(y[n] | lambda[n]);
          
     }
 }
@@ -581,13 +581,14 @@ area_log<-log(eggs$area)
 #dimensions
 K=ncol(X)
 N=nrow(X)
+M=length(unique(eggs$j.farm))
 #-------------------------------------------------------------------------------
 #Response variable
 y<-eggs$num.eggs
 #-------------------------------------------------------------------------------
 #Data
 #-------------------------------------------------------------------------------
-data_meggs_re=list(N=N, K=K, y=y, X=X, area_log=area_log, j_farm=eggs$j.farm);
+data_meggs_re=list(N=N, K=K, y=y, X=X, area_log=area_log, j_farm=eggs$j.farm, M=M);
 #---------------------------------------------------------
 #Model String
 #---------------------------------------------------------
@@ -595,6 +596,7 @@ model_string_eggs_negbin_re<-"
 data {
     int<lower=0> N; // number of observations
     int<lower=0> K; // number of predictors
+    int<lower=0> M; // number of farms
     matrix[N, K] X;  // matrix design
     vector[N] area_log;
     int j_farm[N];
@@ -605,7 +607,7 @@ parameters {
     real reciprocal_phi;
     real mu_theta;
     real<lower=0> tau_theta;
-    vector[N] theta;
+    vector[M] theta;
 }
 transformed parameters {
     vector[N] eta;

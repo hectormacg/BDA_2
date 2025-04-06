@@ -36,7 +36,7 @@ generated quantities{
 
     // Generate replicated data using vectorized _rng form
     for (n in 1:N) {
-         log_lik[n] = log(poisson_lpmf(y[n] | lambda));
+         log_lik[n] = poisson_lpmf(y[n] | lambda[n]);
          
     }
 }
