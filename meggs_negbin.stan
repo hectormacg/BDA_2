@@ -33,6 +33,6 @@ generated quantities{
     // Generate replicated data using vectorized _rng form
     for (n in 1:N) {
          log_lik[n] = neg_binomial_2_log_lpmf(y[n] | eta[n], phi);   
-         yrep[n] = neg_binomial_2_rng(mu[n], phi);
+         //yrep[n] = neg_binomial_2_rng(mu[n], phi);
     }
 }

@@ -5,7 +5,7 @@ data {
     int<lower=0> M; // number of farms
     matrix[N, K] X;  // matrix design
     vector[N] area_log;
-    int j_farm[N];
+    int<lower=1, upper=M> j_farm[N];
     int y[N]; // observed counts
 }
 parameters {
@@ -29,8 +29,8 @@ transformed parameters {
 
 model {
     reciprocal_phi ~ cauchy(0., 5);
-    beta[1] ~ normal(0,1.5);
-    beta[2:K] ~ normal(0,1);
+    //beta[1] ~ normal(0,1.5);
+    beta ~ normal(0,2);
     mu_theta ~ normal(0, 1);
     tau_theta ~ gamma(0.1, 0.1);
     theta ~ normal(mu_theta, sigma_theta);

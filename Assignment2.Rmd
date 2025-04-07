@@ -193,35 +193,6 @@ Q1.1) [20 marks]
   
   **Evaluate the Gelman-Rubin diagnostics and Gelman-Rubin plots for all model parameters. Interpret these results.**
 ```{r}
-# actual_y<-eggs$num.eggs
-# pred_y<-colMeans(extract(res.meggs1)$y)
-# # Calculate residuals
-# residuals <- actual_y - pred_y
-# 
-# # Create a residual plot
-# plot(pred_y, residuals, 
-#      main = "Residuals vs. Fitted Values",
-#      xlab = "Predicted Values", 
-#      ylab = "Residuals",
-#      pch = 19, col = "blue")
-# 
-# # Add a horizontal line at zero
-# abline(h = 0, col = "red", lty = 2)
-# 
-# # Optionally add a loess smooth to see patterns
-# lines(lowess(pred_y, residuals), col = "green", lwd = 2)
-# 
-# plot(pred_y, actual_y,
-#      main = "Actual vs. Predicted",
-#      xlab = "Predicted Values",
-#      ylab = "Actual Values",
-#      pch = 19, col = "blue")
-# 
-# # Add a reference line (perfect prediction)
-# abline(a = 0, b = 1, col = "red", lty = 2)
-
-```
-```{r}
 #----------------------------------------------------------------
 #Validation of why combined treatments performe worst that alone
 #----------------------------------------------------------------
@@ -573,7 +544,7 @@ Q1.4) [25 marks] **Create a mixed effects count regression model by adapting you
 eggs$j.farm<-as.numeric(as.factor(eggs$farm))
 #-------------------------------------------------------------------------------
 #model matrix, drop intercept
-X<-model.matrix(num.eggs~sprayed+lead+sprayed*lead-1, data = eggs)
+X<-model.matrix(num.eggs~sprayed+lead+sprayed*lead, data = eggs)[, -1]
 #-------------------------------------------------------------------------------
 #offset
 area_log<-log(eggs$area)
@@ -599,7 +570,7 @@ data {
     int<lower=0> M; // number of farms
     matrix[N, K] X;  // matrix design
     vector[N] area_log;
-    int j_farm[N];
+    int<lower=1, upper=M> j_farm[N];
     int y[N]; // observed counts
 }
 parameters {
@@ -623,8 +594,8 @@ transformed parameters {
 
 model {
     reciprocal_phi ~ cauchy(0., 5);
-    beta[1] ~ normal(0,1.5);
-    beta[2:K] ~ normal(0,1);
+    //beta[1] ~ normal(0,1.5);
+    beta ~ normal(0,2);
     mu_theta ~ normal(0, 1);
     tau_theta ~ gamma(0.1, 0.1);
     theta ~ normal(mu_theta, sigma_theta);
@@ -653,27 +624,22 @@ cat(model_string_eggs_negbin_re,file=fname,append=FALSE);
 #Calling STAN
 #---------------------------------------------------------
 res.meggs2<- stan(file = fname, data = data_meggs_re,
-                  iter = 3000,
-                  chains = 4,
+                  iter = 5000,
+                  chains = 1,
                   warmup =1400,
                   cores = parallel::detectCores(),
-                  refresh=0)
+                  refresh=0,
+                  seed = 42
+)
 
-
+print(res.meggs2)
 
 ```
+
  
 **Explanation**: (write here)
 
 
-```{r}
-
-```
-
-
-**Explanation**: (write here)
-
- 
  **Write down the mathematical formulation of your model. You should write the model in latex and include all priors/hyper-priors.**
 
 **Explanation**: (write here)
@@ -708,32 +674,241 @@ Q2) [30 marks]
 
 
 ```{r}
+#--------------------------------------------------
+#Libraries
+library(INLA)
+library(inlabru)
+library(sf)
+#--------------------------------------------------
+#data pre-process
+#-------------------------------------------------
+ozone$year_centered<-ozone$year-mean(ozone$year)
+#--------------------------------------------------
+#Location mesh
+Locations = data.frame(easting=ozone$Longitude, northing=ozone$Latitude)
+loc.mesh <- inla.mesh.2d(Locations, max.edge = c(1, 2))
+loc.spde = inla.spde2.pcmatern(mesh = loc.mesh,
+                               prior.range = c(1, 0.5),
+                               prior.sigma = c(1, 0.5))
+ozone$geometry <- sf::st_as_sf(Locations,
+coords = c("easting", "northing"))$geometry
+#--------------------------------------------------
+#year mesh
+year.mesh <- inla.mesh.1d(seq(min(ozone$year_centered), max(ozone$year_centered), length.out = 100))
+year.spde <- inla.spde2.pcmatern(mesh = year.mesh,
+                                 prior.range = c(1, 0.5),
+                                 prior.sigma = c(1, 0.5))
 
+#--------------------------------------------------
+#fit
+cmp <- o3 ~ floc(geometry, model = loc.spde) + 
+         fyear(year_centered, model = year.spde) +
+         year_centered + Longitude +Latitude+Intercept(1)
+
+res.ozone1 <- bru(cmp, data = ozone, family = "gaussian",
+           options = list(control.compute = list(dic = TRUE, cpo = TRUE, waic = TRUE)))
+#--------------------------------------------------
+#Print mesh
+coords<-as.matrix(ozone[, c('Longitude', 'Latitude')])
+prdomain <- inla.nonconvex.hull(coords,
+  convex = -0.03, concave = -0.05,
+  resolution = c(100, 100))
+plot(prdomain)
+# prmesh <- inla.mesh.2d(boundary = prdomain,
+#                        max.edge = c(1, 2))
+# plot(prmesh)
+plot(loc.mesh)
+points(coords, col="red",pch=20)
+
+
+summary(res.ozone1)
 ```
+
 
 **Plot the marginal posterior estimates for all fixed effects, and the range and log.variance of the SPDE effect placed on the year.**
 
 ```{r}
+plot(res.ozone1$marginals.fixed$Intercept, type='l',xlab="x",
+ylab="Density",main="Posterior density of B0; intercept")
+plot(res.ozone1$marginals.fixed$year_centered,type='l',xlab="x",
+ylab="Density",main="Posterior density of B1; year_centered")
+plot(res.ozone1$marginals.fixed$Longitude,type='l',xlab="x",
+ylab="Density",main="Posterior density of B2; Longitude")
+plot(res.ozone1$marginals.fixed$Latitude,type='l',xlab="x",
+ylab="Density",main="Posterior density of B3; Latitude")
+
+```
+
+```{r}
+post.range <- spde.posterior(res.ozone1, name = "fyear", what = "range")
+plot(post.range)
+
+post.range <- spde.posterior(res.ozone1, name = "fyear", what = "log.variance")
+plot(post.range)
 
 ```
 
 **Plot the posterior mean and 95% credible envelope for the spatial correlation function. Investigate the sensitivity of this estimate to your choice of prior on the location-specific SPDE and the resolution of the spatial mesh.**
 
 ```{r}
+# Define the combinations of settings you want to test
+# prior_ranges <- list(c(0.5, 0.5), c(1, 0.5), c(2, 0.5))
+# prior_sigmas <- list(c(0.5, 0.5), c(1, 0.5), c(2, 0.5))
+# max_edges <- list(c(1, 2), c(2, 4), c(3, 6))
+
+# Function to plot spatial correlation for a given setting
+run_and_plot_spatial_correlation <- function(range_index, sigma_index, edge_index) {
+  # Locate the settings using indices
+  range_setting <- prior_ranges[[range_index]]
+  sigma_setting <- prior_sigmas[[sigma_index]]
+  edge_setting <- max_edges[[edge_index]]
+
+  # Create mesh for locations with specified edge setting
+  Locations <- data.frame(easting = ozone$Longitude, northing = ozone$Latitude)
+  loc.mesh <- inla.mesh.2d(Locations, max.edge = edge_setting)
+  
+  # SPDE model setup with current priors
+  loc.spde <- inla.spde2.pcmatern(mesh = loc.mesh,
+                                 prior.range = range_setting,
+                                 prior.sigma = sigma_setting)
+  
+  ozone$sfLocations <- sf::st_as_sf(Locations, coords = c("easting", "northing"))$geometry
+
+  # Define the model
+  cmp <- o3 ~ floc(sfLocations, model = loc.spde) + 
+                fyear(year_centered, model = year.spde) +
+                year_centered + Longitude + Latitude + Intercept(1)
+
+  # Fit the model
+  res.ozone <- bru(cmp, data = ozone, family = "gaussian",
+                   options = list(control.compute = list(dic = TRUE, cpo = TRUE, waic = TRUE)))
+
+  # Extract posterior correlation
+  post.corr <- spde.posterior(res.ozone, name = "floc", what = "matern.correlation")
+
+  # Construct plot data frame
+  df_to_plot <- data.frame(
+    distance = post.corr$x,
+    mean_corr = post.corr$q0.5,
+    lower_corr = post.corr$q0.025,
+    upper_corr = post.corr$q0.975
+  )
+
+  # Create the plot object
+  p <- ggplot(df_to_plot, aes(x = distance, y = mean_corr)) +
+    geom_line(color = "blue") +
+    geom_ribbon(aes(ymin = lower_corr, ymax = upper_corr), alpha = 0.2) +
+    labs(
+      title = paste("Spatial Correlation with Priors: Range", paste(range_setting, collapse = "-"),
+                    ", Sigma", paste(sigma_setting, collapse = "-"),
+                    ", Edge", paste(edge_setting, collapse = "-")),
+      x = "Distance",
+      y = "Correlation"
+    ) +
+    theme_minimal()
+
+  # Print the plot
+  print(p)
+}
+
+prior_ranges <- list(c(0.5, 0.5), c(1, 0.5), c(2, 0.5))
+prior_sigmas <- list(c(0.5, 0.5))
+max_edges <- list(c(1, 2))
+# Combination grid
+settings <- expand.grid(
+  prior.range = 1:length(prior_ranges),
+  prior.sigma = 1:length(prior_sigmas),
+  max.edge = 1:length(max_edges)
+)
+
+# Iterate over all combinations
+for (i in 1:nrow(settings)) {
+  run_and_plot_spatial_correlation(
+    settings$prior.range[i],
+    settings$prior.sigma[i],
+    settings$max.edge[i]
+  )
+}
 ```
+
+```{r}
+prior_ranges <- list(c(0.5, 0.5))
+prior_sigmas <- list(c(0.5, 0.5), c(1, 0.5), c(0.5, 0.25))
+max_edges <- list(c(1, 2))
+# Combination grid
+settings <- expand.grid(
+  prior.range = 1:length(prior_ranges),
+  prior.sigma = 1:length(prior_sigmas),
+  max.edge = 1:length(max_edges)
+)
+print(settings)
+# Iterate over all combinations
+for (i in 1:nrow(settings)) {
+  run_and_plot_spatial_correlation(
+    settings$prior.range[i],
+    settings$prior.sigma[i],
+    settings$max.edge[i]
+  )
+}
+
+
+```
+```{r}
+
+prior_ranges <- list(c(0.5, 0.5))
+prior_sigmas <- list(c(0.5, 0.5))
+max_edges <- list(c(1, 2), c(1, 3))
+# Combination grid
+settings <- expand.grid(
+  prior.range = 1:length(prior_ranges),
+  prior.sigma = 1:length(prior_sigmas),
+  max.edge = 1:length(max_edges)
+)
+
+# Iterate over all combinations
+for (i in 1:nrow(settings)) {
+  run_and_plot_spatial_correlation(
+    settings$prior.range[i],
+    settings$prior.sigma[i],
+    settings$max.edge[i]
+  )
+}
+
+
+```
+
 
 **Explanation**: (write here)
  
  
-```{r}
-
-```
 
 
 
 **Plot the posterior mean of the combination of the fixed effect and random effect placed on the year. With help from the code in Lecture 8, plot the posterior mean of the spatial effect using `ggplot2`. Interpet the estimates of both the yearly effect and the spatial effect.**
 
 Hint: To aid in your interpretation of the spatial random effect, you can overlay the border of the UK on your spatial map. To do this, create your ggplot and add a `geom_polygon` overlay. See the example code below.
+```{r}
+plot(year.mesh$loc,res.ozone1$summary.fixed$mean[1]*year.mesh$loc+res.ozone1$summary.random$fyear$mean,xlab="year",ylab="mean of total effect (fixed + random effect)",type="l")
+```
+
+
+
+```{r}
+library(RColorBrewer)
+pix <- fm_pixels(loc.mesh, dims = c(200, 200),format = "sf")
+  
+#In the predict() function, the first argument is the fitted bru model, the second argument is a dataframe of positions to be predicted, and the third argument is the formula to be predicted
+#To plot the posterior mean of the spatial random effect plus the intercept term, we use formula=~floc+Intercept
+#See https://inlabru-org.github.io/inlabru/reference/predict.bru.html for further examples
+  
+pred <- predict(res.ozone1, newdata = pix, formula=~floc+Intercept)
+ggplot() +
+    gg(prmesh) +
+    gg(pred, aes(color = mean))+
+    scale_color_gradientn(colours=brewer.pal(11, "RdYlBu"),limits=range(pred$mean))
+
+
+```
 
 ```{r,echo= F}
 library(INLA)
@@ -743,8 +918,27 @@ loc.mesh <- inla.mesh.2d(coords, max.edge = c(2,3))
 ```
 
 ```{r}
+library(RColorBrewer)
+pix <- fm_pixels(loc.mesh, dims = c(200, 200),format = "sf")
+
+#In the predict() function, the first argument is the fitted bru model, the second argument is a dataframe of positions to be predicted, and the third argument is the formula to be predicted
+#To plot the posterior mean of the spatial random effect plus the intercept term, we use formula=~floc+Intercept
+#See https://inlabru-org.github.io/inlabru/reference/predict.bru.html for further examples
+  
+pred <- predict(res.ozone1, newdata = pix, formula=~floc+Intercept)
+ggplot() +
+gg(loc.mesh) +
+gg(pred, aes(color = mean))+
+scale_color_gradientn(colours=brewer.pal(11, "RdYlBu"),limits=range(pred$mean))+
+geom_polygon(data = UK, aes(x = long, y = lat, group = group), fill = NA, color = "black")  
+
+```
+
+```{r}
 library(ggplot2)
 library(inlabru)
+
+
 UK <- map_data(map = "world", region = "UK") # changed map to "world"
 ggplot() +
   gg(loc.mesh)+
