@@ -893,38 +893,12 @@ plot(year.mesh$loc,res.ozone1$summary.fixed$mean[1]*year.mesh$loc+res.ozone1$sum
 
 
 
-```{r}
-library(RColorBrewer)
-pix <- fm_pixels(loc.mesh, dims = c(200, 200),format = "sf")
-  
-#In the predict() function, the first argument is the fitted bru model, the second argument is a dataframe of positions to be predicted, and the third argument is the formula to be predicted
-#To plot the posterior mean of the spatial random effect plus the intercept term, we use formula=~floc+Intercept
-#See https://inlabru-org.github.io/inlabru/reference/predict.bru.html for further examples
-  
-pred <- predict(res.ozone1, newdata = pix, formula=~floc+Intercept)
-ggplot() +
-    gg(prmesh) +
-    gg(pred, aes(color = mean))+
-    scale_color_gradientn(colours=brewer.pal(11, "RdYlBu"),limits=range(pred$mean))
 
-
-```
-
-```{r,echo= F}
-library(INLA)
-coords <- unique(as.matrix(cbind(ozone$Longitude,ozone$Latitude)) )
-loc.mesh <- inla.mesh.2d(coords, max.edge = c(2,3))
-
-```
 
 ```{r}
 library(RColorBrewer)
 pix <- fm_pixels(loc.mesh, dims = c(200, 200),format = "sf")
-
-#In the predict() function, the first argument is the fitted bru model, the second argument is a dataframe of positions to be predicted, and the third argument is the formula to be predicted
-#To plot the posterior mean of the spatial random effect plus the intercept term, we use formula=~floc+Intercept
-#See https://inlabru-org.github.io/inlabru/reference/predict.bru.html for further examples
-  
+UK <- map_data(map = "world", region = "UK")   
 pred <- predict(res.ozone1, newdata = pix, formula=~floc+Intercept)
 ggplot() +
 gg(loc.mesh) +
@@ -934,20 +908,7 @@ geom_polygon(data = UK, aes(x = long, y = lat, group = group), fill = NA, color 
 
 ```
 
-```{r}
-library(ggplot2)
-library(inlabru)
 
-
-UK <- map_data(map = "world", region = "UK") # changed map to "world"
-ggplot() +
-  gg(loc.mesh)+
-  geom_polygon(data = UK, aes(x = long, y = lat, group = group), fill = NA, color = "black")
-```
-
-```{r}
-
-```
 
 **Explanation**: (write here)
 
