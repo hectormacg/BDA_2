@@ -5,20 +5,19 @@ data {
     matrix[N, K] X;  // matrix design
     vector[N] area_log;
     int y[N]; // observed counts
+    real m0;
+    real<lower=0> sigma0;
+    real<lower=0> sigma1;
+    
 }
 parameters {
     vector[K] beta;
 }
 
-transformed parameters {
-    real alpha;
-    alpha = 0.;
-}
-
 
 model {
-    beta[1] ~ normal(0,1.5);
-    beta[2:K] ~ normal(0,1);
+    beta[1] ~ normal(m0, sigma0);
+    beta[2:K] ~ normal(0, sigma1);
     y ~ poisson_log(area_log + X * beta);
 }
 

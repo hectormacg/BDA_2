@@ -212,10 +212,11 @@ Q1.1) [20 marks]
 #Pendientes
 # 1) priors, se debe ver si la formula para los priors necesita ser adaptada, pues 
 # en la formula que se presenta no exites un offset, lo que deberia a entrar a jugar
-# de alguna manera.
-# 2) gelman.diag and plot tiene que ver como plotear parametros especificos
-# 3) poisson log likelihood esta saliendo muy raro el waic, checarlo.
-# 4) phi, checar que prior poner.
+# de alguna manera. check
+# 2) gelman.diag and plot tiene que ver como plotear parametros especificos check
+# 3) poisson log likelihood esta saliendo muy raro el waic, checarlo. check
+# 4) phi, checar que prior poner. check
+# 5) posterior predictive de la pregunta 1.4
 
 #-------------------------------------------------------------------------------
 #model matrix
@@ -236,15 +237,16 @@ y<-eggs$num.eggs
 #-------------------------------------------------------------------------------
 #priors
 #-------------------------------------------------------------------------------
-a=min(eggs$num.eggs)
-b=max(eggs$num.eggs)
+mean.area=mean(eggs$area)
+b=max(eggs$num.eggs)/mean.area
+a=1/(b*mean.area)
 m0=(log(a)+log(b))/2
-sigma0=(log(a)-log(b))/2
-sigma1=(log(a)-log(b))/2
+sigma0=(log(b)-log(a))/2
+sigma1=(log(b)-log(a))/2
 #-------------------------------------------------------------------------------
 #Data
 #-------------------------------------------------------------------------------
-data_meggs=list(N=N, K=K, y=y, X=X, area_log=area_log);
+data_meggs=list(N=N, K=K, y=y, X=X, area_log=area_log, m0=m0, sigma0=sigma0, sigma1=sigma1);
 ```
 
 
@@ -269,20 +271,19 @@ data {
     matrix[N, K] X;  // matrix design
     vector[N] area_log;
     int y[N]; // observed counts
+    real m0;
+    real<lower=0> sigma0;
+    real<lower=0> sigma1;
+    
 }
 parameters {
     vector[K] beta;
 }
 
-transformed parameters {
-    real alpha;
-    alpha = 0.;
-}
-
 
 model {
-    beta[1] ~ normal(0,1.5);
-    beta[2:K] ~ normal(0,1);
+    beta[1] ~ normal(m0, sigma0);
+    beta[2:K] ~ normal(0, sigma1);
     y ~ poisson_log(area_log + X * beta);
 }
 
@@ -313,7 +314,7 @@ cat(model_string_eggs_poisson,file=fname,append=FALSE);
 res.meggs1<- stan(file = fname, data = data_meggs,
                   iter = 3000,
                   chains = 4,
-                  warmup =1400,
+                  warmup =2000,
                   cores = parallel::detectCores(),
                   refresh=0)
 
@@ -324,24 +325,48 @@ mcmc_samples <- As.mcmc.list(res.meggs1)
 #---------------------------------------------------------
 #effectiveSize
 #---------------------------------------------------------
-effectiveSize(mcmc_samples[[1]][, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
-effectiveSize(mcmc_samples[[1]][, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
-effectiveSize(mcmc_samples[[1]][, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
-effectiveSize(mcmc_samples[[1]][, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
+effectiveSize(mcmc_samples[, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
+# effectiveSize(mcmc_samples[[1]][, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
+# effectiveSize(mcmc_samples[[2]][, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
+# effectiveSize(mcmc_samples[[3]][, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
+# effectiveSize(mcmc_samples[[4]][, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
 #---------------------------------------------------------
 #gelman plots and metrics
 #---------------------------------------------------------
-# gelman.diag(mcmc_samples)
-# gelman.plot(mcmc_samples)
+gelman.diag(mcmc_samples[, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
+gelman.plot(mcmc_samples[, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
 
 
 ```
 
 
 
+**Explanation**: The model is formulated as follows:
 
+$$
+\mu_i = \text{area}_i \cdot e^{\beta_1 + \beta_{2} \cdot \text{Spread} + \beta_{3} \cdot \text{Lead} + \beta_{4} \cdot \text{Spread\_and\_Lead}}
+$$
 
-**Explanation**: (write here)
+Given that the response is expected to be between the interval $[0, 340]$, a non-informative prior is chosen such that $\mu_i$ resides within $\left[\frac{1}{340}, 340\right]$, thereby avoiding issues associated with zero. An important consideration is that, due to the area offset, these ranges are adjusted by dividing by the mean area (or mean offset), resulting in a modified range of $\left[\frac{1}{340 \cdot \text{mean\_area}}, \frac{340}{\text{mean\_area}}\right]$. This follows from the equation above by dividing through by $\text{area}_i$. For this range $[a, b]$, the prior formulation is:
+
+$$
+\beta_1 \sim N(\mu_0, \sigma^2_0)
+$$
+
+where $\mu_0 = \frac{\log(a) + \log(b)}{2}$ and $\sigma_0 = \frac{\log(b) - \log(a)}{2}$.
+
+For the subsequent coefficients $\beta_i$ ($i > 1$), we use:
+
+$$
+\beta_i \sim N(0, \sigma^2_i)
+$$
+
+where $\sigma_i = \frac{\log(b) - \log(a)}{2}$.
+
+These priors ensure that the response adheres to the desired range.
+
+After running 4 chains each with 3000 iterations, analysis of the Gelman plot indicates that the chains become more stable after 2000 iterations. Additionally, the Gelman-Rubin statistic $\hat{R} < 1.05$ suggests that the chains have reached a stable distribution.
+
 
  **Print the summary statistics for all model parameters and their posterior density estimates. Discuss these results and explain how, in the context of your model, each of the regression parameters (including the intercept) should be interpreted. Plot the posterior density of the expected increase in the rate of caterpillar egg laying (count per area) when using both insecticides instead of just the sprayed insecticide.**
 
@@ -363,19 +388,16 @@ mcmc_dens(res.meggs1, pars=c("beta[1]","beta[2]","beta[3]","beta[4]", "beta_3_4_
 
 ```
 
-**Explanation**: Intercept (β₀): The expected number of eggs when no spraying (sprayed = "N") and no lead exposure (lead = "N").
+**Explanation**: 
+Intercept ($\beta_1$): Represents the expected number of eggs in the absence of spraying (sprayed = "N") and lead exposure (lead = "N").
 
-β₁ (Effect of Spraying): The change in the number of eggs when moving from "N" to "Y" for sprayed, holding lead constant at "N".
+Effect of Spraying ($\beta_2$): Indicates the change in the number of eggs transitioning from "N" to "Y" for the sprayed variable, while keeping lead exposure constant at "N".
 
-β₂ (Effect of Lead Exposure): The change in the number of eggs when moving from "N" to "Y" for lead, holding sprayed constant at "N".
+Effect of Lead Exposure ($\beta_3$): Denotes the change in the number of eggs transitioning from "N" to "Y" for lead exposure, while keeping the spraying condition constant at "N".
 
-β₃ (Interaction Effect of Spraying and Lead): The additional change in the number of eggs when both spraying = "Y" and lead = "Y" occur together. This quantifies whether the combined effect of both treatments differs from the sum of their individual effects.
+Interaction Effect of Spraying and Lead ($\beta_4$): Represents the added change in the number of eggs when both spraying and lead exposure are applied simultaneously ("Y"). This term quantifies whether the combined effect of these two treatments differs from the sum of their individual impacts.
 
-*sprayed	lead	Expected Value
-N	N	β₀
-Y	N	β₀ + β₁
-N	Y	β₀ + β₂
-Y	Y	β₀ + β₁ + β₂ + β₃
+With regard to the distributions, it can be inferred that spraying is more effective since the corresponding $\beta$ is more negative, indicating a larger decrease in the egg count compared to using only the lead insecticide. Additionally, it can be concluded that applying both treatments rather than just spraying results in a further reduction of egg counts by approximately 10%, as the rate $e^{\beta_3+\beta_4}$ suggests a multiplicative effect around 0.90.
 
 
 \pagebreak
@@ -404,22 +426,24 @@ data {
     matrix[N, K] X;  // matrix design
     vector[N] area_log;
     int y[N]; // observed counts
+    real m0;
+    real<lower=0> sigma0;
+    real<lower=0> sigma1;
+
 }
 parameters {
     vector[K] beta;
-    real reciprocal_phi;
+     real<lower=0> phi;
 }
 transformed parameters {
     vector[N] eta;
-    real phi;
     eta = area_log + X * beta;
-    phi = 1. / reciprocal_phi;
 }
 
 model {
-    reciprocal_phi ~ cauchy(0., 5);
-    beta[1] ~ normal(0,1.5);
-    beta[2:K] ~ normal(0,1);
+    phi ~ gamma(2, 0.01);
+    beta[1] ~ normal(m0, sigma0);
+    beta[2:K] ~ normal(0, sigma1);
     y ~ neg_binomial_2_log(eta, phi);
 }
 
@@ -432,7 +456,7 @@ generated quantities{
     // Generate replicated data using vectorized _rng form
     for (n in 1:N) {
          log_lik[n] = neg_binomial_2_log_lpmf(y[n] | eta[n], phi);   
-         //yrep[n] = neg_binomial_2_rng(mu[n], phi);
+          yrep[n] = neg_binomial_2_rng(mu[n], phi);
     }
 }
 "
@@ -449,12 +473,25 @@ res.meggs2<- stan(file = fname, data = data_meggs,
                   refresh=0)
 
 #---------------------------------------------------------
-
+mcmc_dens(res.meggs2, pars=c("phi"))
 
 ```
 
+**Explanation**: In the negative binomial model, the variance is given by:
 
-**Explanation**: (write here)
+$$
+\sigma^2 = \mu + \frac{\mu^2}{\phi}
+$$
+
+- **Large $\phi$:**
+  - As $\phi$ becomes large, $\frac{\mu^2}{\phi}$ approaches zero, making $\sigma^2 \approx \mu$. This is similar to a Poisson distribution, where variance equals the mean, indicating little to no over-dispersion.
+
+- **Small $\phi$:**
+  - A small $\phi$ increases $\frac{\mu^2}{\phi}$, leading to $\sigma^2 > \mu$, showing over-dispersion.
+
+Thus, larger $\phi$ suggests that the data has variance close to the mean, like a Poisson distribution.
+
+using the prior of gamma(2, 0.01) give a mean of 20 which is a high value in this context.
 
 
 \pagebreak
@@ -517,7 +554,8 @@ waic(posterior_samples)
 
 **Interpret your WAIC estimates.**
 
-**Explanation**: (write here)
+**Explanation**: The negative binomial model provides a better balance between goodness-of-fit and
+complexity, making it the preferred choice, having a lower WAIC than the poisson. 
 
 
 \pagebreak
@@ -541,7 +579,8 @@ Q1.4) [25 marks] **Create a mixed effects count regression model by adapting you
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #Index farm
-eggs$j.farm<-as.numeric(as.factor(eggs$farm))
+# eggs$j.farm<-as.numeric(as.factor(eggs$farm))
+eggs$j.farm<-as.integer(sub("B", "", eggs$farm))
 #-------------------------------------------------------------------------------
 #model matrix, drop intercept
 X<-model.matrix(num.eggs~sprayed+lead+sprayed*lead, data = eggs)[, -1]
@@ -559,7 +598,7 @@ y<-eggs$num.eggs
 #-------------------------------------------------------------------------------
 #Data
 #-------------------------------------------------------------------------------
-data_meggs_re=list(N=N, K=K, y=y, X=X, area_log=area_log, j_farm=eggs$j.farm, M=M);
+data_meggs_re=list(N=N, K=K, y=y, X=X, area_log=area_log, j_farm=eggs$j.farm, M=M, sigma1=sigma1);
 #---------------------------------------------------------
 #Model String
 #---------------------------------------------------------
@@ -569,44 +608,40 @@ data {
     int<lower=0> K; // number of predictors
     int<lower=0> M; // number of farms
     matrix[N, K] X;  // matrix design
+    real<lower=0> sigma1;
     vector[N] area_log;
     int<lower=1, upper=M> j_farm[N];
     int y[N]; // observed counts
 }
 parameters {
     vector[K] beta;
-    real reciprocal_phi;
+    real<lower=0> phi;
     real mu_theta;
     real<lower=0> tau_theta;
     vector[M] theta;
 }
 transformed parameters {
     vector[N] eta;
-    real phi;
     real<lower=0> sigma_theta;
-    phi = 1. / reciprocal_phi;
     sigma_theta = 1/sqrt(tau_theta);
-     //eta = area_log + X * beta + theta[j_farm];
     for (n in 1:N){
         eta[n] =  area_log[n] + X[n] * beta + theta[j_farm[n]];
     }
 }
 
 model {
-    reciprocal_phi ~ cauchy(0., 5);
-    //beta[1] ~ normal(0,1.5);
-    beta ~ normal(0,2);
+    phi ~ gamma(2, 0.01);
+    beta ~ normal(0, sigma1);
     mu_theta ~ normal(0, 1);
     tau_theta ~ gamma(0.1, 0.1);
     theta ~ normal(mu_theta, sigma_theta);
     for (n in 1:N){
-         
          y[n] ~ neg_binomial_2_log(eta[n], phi);
     }
 }
 
 generated quantities{
-    //vector[N] yrep;  //replicates
+    vector[N] yrep;  //replicates
     vector[N] mu;
     vector[N] log_lik;
     mu = exp(eta);
@@ -614,7 +649,7 @@ generated quantities{
     // Generate replicated data using vectorized _rng form
     for (n in 1:N) {
          log_lik[n] = neg_binomial_2_log_lpmf(y[n] | eta[n], phi);   
-         //yrep[n] = neg_binomial_2_rng(mu[n], phi);
+         yrep[n] = neg_binomial_2_rng(mu[n], phi);
     }
 }
 "
@@ -624,9 +659,9 @@ cat(model_string_eggs_negbin_re,file=fname,append=FALSE);
 #Calling STAN
 #---------------------------------------------------------
 res.meggs2<- stan(file = fname, data = data_meggs_re,
-                  iter = 5000,
+                  iter = 6000,
                   chains = 1,
-                  warmup =1400,
+                  warmup =2000,
                   cores = parallel::detectCores(),
                   refresh=0,
                   seed = 42
@@ -634,6 +669,46 @@ res.meggs2<- stan(file = fname, data = data_meggs_re,
 
 print(res.meggs2)
 
+
+```
+```{r}
+#---------------------------------------------
+#Library
+require(fBasics)
+#---------------------------------------------
+#Library
+yrep.samples<-extract(res.meggs2)$yrep
+y<-eggs$num.eggs
+yrep.samples.min=apply(yrep.samples,MARGIN=1, FUN=min)
+yrep.samples.max=apply(yrep.samples,MARGIN=1, FUN=max)
+yrep.samples.median=apply(yrep.samples,MARGIN=1, FUN=median)
+
+yrep.samples.kurtosis=apply(yrep.samples,MARGIN=1, FUN=kurtosis)
+yrep.samples.skewness=apply(yrep.samples,MARGIN=1, FUN=skewness)
+par(mfrow=c(3,2))
+hist(yrep.samples.min,col="gray40",main="Predictive distribution for min")
+abline(v=min(y),col="red",lwd=2)
+hist(yrep.samples.max,col="gray40",main="Predictive distribution for max")
+abline(v=max(y),col="red",lwd=2)
+hist(yrep.samples.median,col="gray40",main="Predictive distribution for median")
+abline(v=median(y),col="red",lwd=2)
+hist(yrep.samples.kurtosis,col="gray40",main="Predictive distribution for kurtosis")
+abline(v=kurtosis(y),col="red",lwd=2)
+hist(yrep.samples.skewness,col="gray40",main="Predictive distribution for skewness")
+abline(v=skewness(y),col="red",lwd=2)
+par(mfrow=c(1,1))
+  
+```
+
+
+
+
+```{r}
+mcmc_dens(res.meggs2, pars=c("theta[1]", "theta[2]", "theta[3]", "theta[4]",
+                             "theta[5]", "theta[6]", "theta[7]", "theta[8]",
+                             "theta[9]", "theta[10]", "theta[11]", "theta[12]",
+                             "theta[13]"
+                             ))
 ```
 
  
@@ -642,11 +717,25 @@ print(res.meggs2)
 
  **Write down the mathematical formulation of your model. You should write the model in latex and include all priors/hyper-priors.**
 
-**Explanation**: (write here)
+**Explanation**: $$\mu_{\theta} \sim N(0,1) \quad  \tau_{\theta} \sim Gamma(0.1, 0.1) $$
+$$\beta \sim N(0, \sigma_1)  \quad \theta \sim N(\mu_{\theta}, \tau_{\theta}) \quad \phi \sim Gamma(0.1, 0.1)$$
+$$\eta_{i,j}=log\_area_i+ \theta_j + \beta_{1} \cdot \text{Spread}_i + \beta_{2} \cdot \text{Lead}_i + \beta_{3} \cdot \text{Spread_and_Lead}_i \quad 1<=j<=13 $$
+$$\mu_{i,j}=e^{\eta_{i, j}} $$
+$$y_{i,j} \sim NegBin(\mu_{i,j}, \quad \phi)$$
 
  **Consider farm `B6` and a patch a land with area 30$m^2$. For the following four cases, calculate the posterior predictive distribution that the number of caterpillar eggs in that patch of land is equal to zero: i) no insecticide applied, ii) only sprayed insecticide applied, iii) only lead insecticide applied, iv) both insecticides applied.**
  
 ```{r}
+X_new <- rbind(c(0, 0, 0), c(1, 0, 0), c(0, 1, 0),c(1,1,1))
+theta_farm_b6<-extract(res.meggs2)$theta[,6]
+beta<-extract(res.meggs2)$beta
+phi<-extract(res.meggs2)$phi
+eta <- t(X_new %*% t(beta)) + theta_farm_b6 + log(30)
+y_pred <- apply(eta, 2, \(x) rnbinom(length(x), size = phi, mu = exp(x)))
+apply(y_pred, 2, \(x) mean(x==0))
+
+
+
 
 ```
 
@@ -679,6 +768,7 @@ Q2) [30 marks]
 library(INLA)
 library(inlabru)
 library(sf)
+library(ggplot2)
 #--------------------------------------------------
 #data pre-process
 #-------------------------------------------------
@@ -899,7 +989,7 @@ plot(year.mesh$loc,res.ozone1$summary.fixed$mean[1]*year.mesh$loc+res.ozone1$sum
 library(RColorBrewer)
 pix <- fm_pixels(loc.mesh, dims = c(200, 200),format = "sf")
 UK <- map_data(map = "world", region = "UK")   
-pred <- predict(res.ozone1, newdata = pix, formula=~floc+Intercept)
+pred <- predict(res.ozone1, newdata = pix, formula=~floc)
 ggplot() +
 gg(loc.mesh) +
 gg(pred, aes(color = mean))+
