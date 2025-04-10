@@ -192,32 +192,11 @@ Q1.1) [20 marks]
   **Fit the model, with the burn-in period, number of chains (>1), and number of iterations chosen such that the effective sample size is at least 1000 in all of these parameters. [Hint: you can convert a `stanfit` object to an mcmc object using the `As.mcmc.list()` function in `coda`]**
   
   **Evaluate the Gelman-Rubin diagnostics and Gelman-Rubin plots for all model parameters. Interpret these results.**
-```{r}
-#----------------------------------------------------------------
-#Validation of why combined treatments performe worst that alone
-#----------------------------------------------------------------
-# mean(eggs[eggs$sprayed=='Y', 'num.eggs'])
-# mean(eggs[ (eggs$lead=='Y') , 'num.eggs'])
-# mean(eggs[(eggs$sprayed=='Y') & (eggs$lead=='Y') , 'num.eggs'])
-# aux<-rowSums(extract(res.meggs1)$beta[,c(2,3)])
-# hist(aux)
 
-
-```
 
   
   
 ```{r}
-#-------------------------------------------------------------------------------
-#Pendientes
-# 1) priors, se debe ver si la formula para los priors necesita ser adaptada, pues 
-# en la formula que se presenta no exites un offset, lo que deberia a entrar a jugar
-# de alguna manera. check
-# 2) gelman.diag and plot tiene que ver como plotear parametros especificos check
-# 3) poisson log likelihood esta saliendo muy raro el waic, checarlo. check
-# 4) phi, checar que prior poner. check
-# 5) posterior predictive de la pregunta 1.4
-
 #-------------------------------------------------------------------------------
 #model matrix
 eggs$sprayed<-as.factor(eggs$sprayed)
@@ -326,10 +305,7 @@ mcmc_samples <- As.mcmc.list(res.meggs1)
 #effectiveSize
 #---------------------------------------------------------
 effectiveSize(mcmc_samples[, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
-# effectiveSize(mcmc_samples[[1]][, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
-# effectiveSize(mcmc_samples[[2]][, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
-# effectiveSize(mcmc_samples[[3]][, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
-# effectiveSize(mcmc_samples[[4]][, c('beta[1]', 'beta[2]', 'beta[3]', 'beta[4]')])
+
 #---------------------------------------------------------
 #gelman plots and metrics
 #---------------------------------------------------------
@@ -667,7 +643,7 @@ res.meggs2<- stan(file = fname, data = data_meggs_re,
                   seed = 42
 )
 
-print(res.meggs2)
+# print(res.meggs2)
 
 
 ```
@@ -708,11 +684,17 @@ mcmc_dens(res.meggs2, pars=c("theta[1]", "theta[2]", "theta[3]", "theta[4]",
                              "theta[5]", "theta[6]", "theta[7]", "theta[8]",
                              "theta[9]", "theta[10]", "theta[11]", "theta[12]",
                              "theta[13]"
-                             ))
+                             ),
+          transformations = "exp")
 ```
 
  
-**Explanation**: (write here)
+**Explanation**: 
+For the farm-specific random effects hyper parameters, the hyper-mean parameter $\mu$ was assigned a Normal(0, 1) prior, assuming the average farm-level effect centers around zero on the log scale. The hyper-standard deviation $\tau$ was given an gamma(0.1, 0.1) prior, favoring smaller values and encouraging shrinkage towards the overall mean while allowing larger variation if needed. These priors balance flexibility with regularization, capturing true variation without allowing for implausibly large effects.
+
+The posterior predictive checks indicate that all the KPIs fall within the range of the samples, demonstrating that the posterior predictive function is performing well and appropriately capturing the variability in the data.
+
+Additionally, the posterior predictive analysis for each $\theta_j$ reveals that for farms 5, 9, and 13, the expected count of eggs is lower, as the factor is less than 1. Since none of these distributions are centered around 1 and they display distinct characteristics, it makes sense to employ random effects for each farm.
 
 
  **Write down the mathematical formulation of your model. You should write the model in latex and include all priors/hyper-priors.**
@@ -733,7 +715,6 @@ phi<-extract(res.meggs2)$phi
 eta <- t(X_new %*% t(beta)) + theta_farm_b6 + log(30)
 y_pred <- apply(eta, 2, \(x) rnbinom(length(x), size = phi, mu = exp(x)))
 apply(y_pred, 2, \(x) mean(x==0))
-
 
 
 
@@ -841,11 +822,8 @@ plot(post.range)
 **Plot the posterior mean and 95% credible envelope for the spatial correlation function. Investigate the sensitivity of this estimate to your choice of prior on the location-specific SPDE and the resolution of the spatial mesh.**
 
 ```{r}
-# Define the combinations of settings you want to test
-# prior_ranges <- list(c(0.5, 0.5), c(1, 0.5), c(2, 0.5))
-# prior_sigmas <- list(c(0.5, 0.5), c(1, 0.5), c(2, 0.5))
-# max_edges <- list(c(1, 2), c(2, 4), c(3, 6))
 
+# ---------------------------------------------------------------------------------
 # Function to plot spatial correlation for a given setting
 run_and_plot_spatial_correlation <- function(range_index, sigma_index, edge_index) {
   # Locate the settings using indices
@@ -901,7 +879,7 @@ run_and_plot_spatial_correlation <- function(range_index, sigma_index, edge_inde
   print(p)
 }
 
-prior_ranges <- list(c(0.5, 0.5), c(1, 0.5), c(2, 0.5))
+prior_ranges <- list(c(0.5, 0.5), c(1, 0.5), c(2, 0.5), c(0.5, 0.25), c(0.5, 0.75))
 prior_sigmas <- list(c(0.5, 0.5))
 max_edges <- list(c(1, 2))
 # Combination grid
@@ -923,7 +901,7 @@ for (i in 1:nrow(settings)) {
 
 ```{r}
 prior_ranges <- list(c(0.5, 0.5))
-prior_sigmas <- list(c(0.5, 0.5), c(1, 0.5), c(0.5, 0.25))
+prior_sigmas <- list(c(0.5, 0.5), c(0.25, 0.5), c(0.75, 0.5), c(0.5, 0.25), c(0.5, 0.75))
 max_edges <- list(c(1, 2))
 # Combination grid
 settings <- expand.grid(
@@ -931,7 +909,7 @@ settings <- expand.grid(
   prior.sigma = 1:length(prior_sigmas),
   max.edge = 1:length(max_edges)
 )
-print(settings)
+
 # Iterate over all combinations
 for (i in 1:nrow(settings)) {
   run_and_plot_spatial_correlation(
@@ -947,7 +925,7 @@ for (i in 1:nrow(settings)) {
 
 prior_ranges <- list(c(0.5, 0.5))
 prior_sigmas <- list(c(0.5, 0.5))
-max_edges <- list(c(1, 2), c(1, 3))
+max_edges <- list(c(1, 2), c(1, 3), c(2, 3))
 # Combination grid
 settings <- expand.grid(
   prior.range = 1:length(prior_ranges),
@@ -968,7 +946,12 @@ for (i in 1:nrow(settings)) {
 ```
 
 
-**Explanation**: (write here)
+**Explanation**: For the prior.range parameter in the SPDE model, increasing either of the parameters broadens the distribution of the correlation range. Specifically, the second parameter affects the correlation at larger distances more significantly, leading to wider confidence intervals that reflect increased uncertainty.
+
+Similarly, for the prior.sigma parameter, increasing the values broadens the distribution of the standard deviation and increases uncertainty in variance estimates.
+
+Regarding the spatial mesh resolution, increasing the max.edge parameter results in a coarser mesh. This less granular setup enhances the correlations between more distant locations because fewer distinctions between closely spaced observations are made.
+    
  
  
 
@@ -1000,5 +983,5 @@ geom_polygon(data = UK, aes(x = long, y = lat, group = group), fill = NA, color 
 
 
 
-**Explanation**: (write here)
+**Explanation**: Regarding the yearly effects, there is an observable increasing trend over the years with greater volatility in the earlier years. The map indicates that urban areas tend to have lower ozone levels compared to surrounding regions, with ozone levels increasing in areas closer to the ocean.
 
